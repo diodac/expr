@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+    <script src="expr.js"></script>
+</head>
+<body>
+    <form id="test-form">
+        <table>
+            <tbody>
+                <tr>
+                    <th>Field 1:</th>
+                    <td>
+                        <input type="text" data-var="field_1">
+                    </td>
+                    <td data-text="num(field_1) > 1000 ? (field_1 > 10000 ? 'mooooaaar!' : 'więcej!') : '' "></td>
+                </tr>
+                <tr>
+                    <th>Field 2:</th>
+                    <td>
+                        <input type="text" data-var="field2" data-value="(field_1||0) < 100 ? val(field_1, 0) * 2 : 100">
+                    </td>
+                    <td data-text="num(field2) >= 100 ? 'osiągnięto limit!' : ''"></td>
+                </tr>
+                <tr>
+                    <th>Field 3:</th>
+                    <td>
+                        <input type="text" data-validate="_self()">
+                    </td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <th>Date 1:</th>
+                    <td>
+                        <input type="text" data-var="date1" data-value="str_substr(now(), 0, 10)">
+                    </td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+    </form>
+
+    <script>
+        function sum(...args) {
+            return args.reduce((ret, arg) => Array.isArray(arg) ? sum(ret, ...arg) : (ret + arg), 0);
+        }
+        function substract(...args) {
+            return args.reduce((ret, arg) => Array.isArray(arg) ? substract(ret, ...arg) : (ret - arg), args[0]*2);
+        }
+        function multiply(...args) {
+            return args.reduce((ret, arg) => Array.isArray(arg) ? multiply(ret, ...arg) : (ret * arg), 1);
+        }
+        function divide(...args) {
+            return args.reduce((ret, arg) => Array.isArray(arg) ? divide(ret, ...arg) : (ret / arg), Math.pow(args[0], 2));
+        }
+        function contains(test, ...args) {
+            return args.reduce((ret, arg) => {
+                if (Array.isArray(arg) && contains(test, ...arg) || arg == test) {
+                    ret = true;
+                }
+                return ret;
+            }, false);
+        }
+        function match(pattern, ...args) {
+            const regex = new RegExp(pattern);
+            return args.reduce((ret, arg) => {
+                if (Array.isArray(arg) && match(pattern, ...arg) || regex.test(arg)) {
+                    return ret;
+                } else {
+                    return false;
+                }
+            }, true);
+        }
+        function ifElse(test, ifTrue, ifFalse) {
+            return test ? ifTrue : ifFalse;
+        }
+        function defaultVal(value, defaultVal) {
+            return value || defaultVal;
+        }
+        function valid(expr, msg) {
+            return expr || msg;
+        }
+        function num(value) {
+            if (!isNaN(parseFloat(value)) && isFinite(value)) {
+                return parseFloat(value);
+            }
+            return 0;
+        }
+        function now() {
+            return (new Date).toISOString()
+                .replace(/[a-z]/gi, ' ')
+                .trim()
+                .replace(/\.\d+$/, '');
+        }
+        function str_substr(value, ...args) {
+            return String.prototype.substr.apply(value, args);
+        }
+
+        function assertEq(actual, expected, msg) {
+            if (actual !== expected) {
+                throw new Error(msg || actual + ' !== ' + expected);
+            }
+            return true;
+        }
+        function assert(actual, msg) {
+            return assertEq(actual, true);
+        }
+
+        const env = new Expr.Environment();
+
+        env.def('sum', sum, { writable: false });
+        env.def('substr', substract, { writable: false });
+        env.def('multi', multiply, { writable: false });
+        env.def('div', divide, { writable: false });
+        env.def('in', contains, { writable: false });
+        env.def('match', match, { writable: false });
+        env.def('ifElse', ifElse, { writable: false });
+        env.def('val', defaultVal, { writable: false });
+        env.def('valid', valid, { writable: false });
+        env.def('num', num, { writable: false });
+        env.def('now', now, { writable: false });
+        env.def('str_substr', str_substr, { writable: false });
+        env.alias('val', 'wart');
+
+        env.set('a', 1);
+        
+        Expr.run('1+2').watch((val) => assertEq(val, 3));
+        Expr.run('1-2').watch((val) => assertEq(val, -1));
+        Expr.run('1*2').watch((val) => assertEq(val, 2));
+        Expr.run('1/2').watch((val) => assertEq(val, 0.5));
+        Expr.run('2*(2+1)').watch((val) => assertEq(val, 6));
+        Expr.run('3/(2+1)').watch((val) => assertEq(val, 1));
+        Expr.run('3/(2+1)-2+3*2').watch((val) => assertEq(val, 5));
+        Expr.run('sum(1,2,3)', env).watch((val) => assertEq(val, 6));
+        Expr.run('substr(4,2,1)', env).watch((val) => assertEq(val, 1));
+        Expr.run('substr(4,2,[1,2])', env).watch((val) => assertEq(val, -1));
+        Expr.run('multi(4,2,[2,2])', env).watch((val) => assertEq(val, 32));
+        Expr.run('div(4,2,2)', env).watch((val) => assertEq(val, 1));
+        Expr.run('div(4,2,[2,2])', env).watch((val) => assertEq(val, 0.5));
+        Expr.run('match("test", "test1")', env).watch((val) => assert(val));
+        Expr.run('match("test$", "test1")', env).watch((val) => assertEq(val, false));
+        Expr.run('in("test", "test1", "test")', env).watch((val) => assertEq(val, true));
+        Expr.run('in("test", "test1", "test2")', env).watch((val) => assertEq(val, false));
+        Expr.run('ifElse(true, "true", "false")', env).watch((val) => assertEq(val, 'true'));
+        Expr.run('ifElse(false, "true", "false")', env).watch((val) => assertEq(val, 'false'));
+        Expr.run('ifElse(1+2>2, "true", "false")', env).watch((val) => assertEq(val, 'true'));
+        Expr.run('ifElse(1+2<2, "true", "false")', env).watch((val) => assertEq(val, 'false'));
+        Expr.run('wart("", 3)', env).watch((val) => assertEq(val, 3));
+        Expr.run('a', env).watch((val) => assertEq(val, 1));
+
+        document.getElementById('test-form').addEventListener('submit', (ev) => { ev.preventDefault(); });
+        document.querySelectorAll('[data-var]').forEach((el) => {
+            const varName = el.dataset.var;
+            env.set(el.dataset.var, el.value);
+            env.watch(varName, (val) => { el.value = val; });     
+            el.addEventListener('change', (event) => { env.set(varName, event.target.value); });
+            el.addEventListener('keyup', (event) => { env.set(varName, event.target.value); });
+        });
+        document.querySelectorAll('[data-value]').forEach((el) => {
+            const localEnv = env.extend();
+            el.readOnly = true;
+            Expr.run(el.dataset.value, env).watch((value) => { 
+                el.value = value;
+                if (el.dataset.var) {
+                    env.set(el.dataset.var, value);
+                }
+            }, (e) => { 
+                el.dataset.error = JSON.stringify(e.message);
+                el.dispatchEvent(new CustomEvent('validated', { bubbles: true }));
+            });
+        });
+        document.querySelectorAll('[data-text]').forEach((el) => {
+            Expr.run(el.dataset.text, env).watch((value) => { el.innerText = value; });
+        });
+        document.querySelectorAll('[data-validate]').forEach((el) => {
+            const localEnv = env.extend();
+            localEnv.def('_self', () => el.value);
+            el.addEventListener('change', () => {
+                Expr.run(el.dataset.validate, localEnv).watch((msg) => {
+                    el.dataset.error = JSON.stringify(msg);
+                    el.dispatchEvent(new CustomEvent('validated', { bubbles: true }));
+                });
+            });
+        });
+        document.addEventListener('validated', (event) => { 
+            if (JSON.parse(event.target.dataset.error)) {
+                alert(event.target.dataset.error); 
+            }
+        });
+
+        env.watch('field1', console.log);
+    </script>
+</body>
+</html>
