@@ -64,10 +64,10 @@
                 return ret;
             }, false);
         }
-        function match(pattern, ...args) {
+        function test(pattern, ...args) {
             const regex = new RegExp(pattern);
             return args.reduce((ret, arg) => {
-                if (Array.isArray(arg) && match(pattern, ...arg) || regex.test(arg)) {
+                if (Array.isArray(arg) && test(pattern, ...arg) || regex.test(arg)) {
                     return ret;
                 } else {
                     return false;
@@ -116,7 +116,7 @@
         env.def('multi', multiply, { writable: false });
         env.def('div', divide, { writable: false });
         env.def('in', contains, { writable: false });
-        env.def('match', match, { writable: false });
+        env.def('test', test, { writable: false });
         env.def('ifElse', ifElse, { writable: false });
         env.def('val', defaultVal, { writable: false });
         env.def('valid', valid, { writable: false });
@@ -140,8 +140,8 @@
         Expr.run('multi(4,2,[2,2])', env).watch((val) => assertEq(val, 32));
         Expr.run('div(4,2,2)', env).watch((val) => assertEq(val, 1));
         Expr.run('div(4,2,[2,2])', env).watch((val) => assertEq(val, 0.5));
-        Expr.run('match("test", "test1")', env).watch((val) => assert(val));
-        Expr.run('match("test$", "test1")', env).watch((val) => assertEq(val, false));
+        Expr.run('test("test", "test1")', env).watch((val) => assert(val));
+        Expr.run('test("test$", "test1")', env).watch((val) => assertEq(val, false));
         Expr.run('in("test", "test1", "test")', env).watch((val) => assertEq(val, true));
         Expr.run('in("test", "test1", "test2")', env).watch((val) => assertEq(val, false));
         Expr.run('ifElse(true, "true", "false")', env).watch((val) => assertEq(val, 'true'));
