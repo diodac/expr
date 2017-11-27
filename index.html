@@ -172,14 +172,16 @@
         });
         document.querySelectorAll('[data-value]').forEach((el) => {
             el.readOnly = true;
-            Expr.run(el.dataset.value, env).watch((value) => { 
-                el.value = value;
-                if (el.dataset.var) {
-                    env.set(el.dataset.var, value);
+            Expr.run(el.dataset.value, env).watch((value, err) => {
+                if (!err) {
+                    el.value = value;
+                    if (el.dataset.var) {
+                        env.set(el.dataset.var, value);
+                    }
+                } else {
+                    el.dataset.error = JSON.stringify(err.message);
+                    el.dispatchEvent(new CustomEvent('validated', { bubbles: true }));
                 }
-            }, (e) => { 
-                el.dataset.error = JSON.stringify(e.message);
-                el.dispatchEvent(new CustomEvent('validated', { bubbles: true }));
             });
         });
         document.querySelectorAll('[data-text]').forEach((el) => {
@@ -189,11 +191,11 @@
             const localEnv = env.extend();
             const out = document.querySelectorAll(el.dataset.validateOut);
             localEnv.def('_self', el.value);
-            Expr.run(el.dataset.validate, localEnv).watch((msg) => {
-                el.dataset.error = JSON.stringify(msg);
+            Expr.run(el.dataset.validate, localEnv).watch((msg, err) => {
+                el.dataset.error = JSON.stringify((err && err.message) || msg);
                 out.forEach((out) => { out.innerHTML = el.dataset.error; });
                 el.dispatchEvent(new CustomEvent('validated', { bubbles: true }));
-            }, (err) => { console.log(err.message); });
+            });
             el.addEventListener('change', () => { localEnv.set('_self', el.value) });
             el.addEventListener('keyup', () => { localEnv.set('_self', el.value) });
         });
@@ -207,10 +209,8 @@
             
             let handler = (event) => { 
                 Expr.run(el.value, env)
-                    .watch((value) => {
-                        out.forEach((o) => { o.innerHTML = value; });
-                    }, (err) => {
-                        out.forEach((o) => { console.log(err.message); });
+                    .watch((value, err) => {
+                        out.forEach((o) => { o.innerHTML = (err && err.message) || value; });
                     });
             }
             el.addEventListener('change', handler);

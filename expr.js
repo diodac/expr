@@ -459,17 +459,10 @@
     function liveEvaluate(expr, env) {
         const primaryExpr = expr;
         const observed = [];
-        const live = new LiveValue();
-        const reevaluate = (function(expr, env) {
+        const live = new LiveValue(() => evaluate(expr, env));
+        const reevaluate = ((expr, env) => {
             return () => { 
-                live.value = () => {
-                    try {
-                        return evaluate(expr, env);
-                    } catch (e) {
-                        live.error(e);
-                    }
-                    return null;
-                }
+                live.value = evaluate(expr, env);
             }
         })(expr, env);
 
@@ -513,8 +506,6 @@
                     throw new Error("I don't know how to evaluate " + expr.type);
             }
         }
-
-        reevaluate();
  
         return live;
     }
@@ -618,47 +609,53 @@
             const _reduce = (value, callback, start) => {
                 return callback(start, value);
             }
-            const _invokeCallback = (callback) => {
-                if (typeof _value === 'function') {
-                    _value = _value();
-                }
-                return callback(_value);
+            const _invokeCallback = (callback, err) => {
+                return callback(this.getValue(), err);
             }
 
+            this.getValue = () => {
+                if (typeof _value === 'function') {
+                    _value = _value(); //a może powinno zostać funkcją?
+                }
+                return  _value;
+            }
             this.setValue = (value) => { 
                 _value = value; 
                 _watchers.forEach((watcher) => {
                     _invokeCallback(watcher.callback);
                 }); 
             }
-            this.getValue = () => _value;
-            this.watch = (callback, error) => { 
-                _watchers.push({ callback, error }); 
-                _invokeCallback(callback);
+            this.error = (err, value) => {
+                _value = value || null; 
+                _watchers.forEach((watcher) => {
+                    _invokeCallback(watcher.callback, err);
+                }); 
                 return this;
             }
-            this.map = (callback, error) => {
+            this.watch = (callback) => { 
+                _watchers.push({ callback });
+                try {
+                    _invokeCallback(callback);
+                } catch (err) {
+                    this.error(err);
+                }
+                return this;
+            }
+            this.map = (callback) => {
                 const live = new LiveValue();
                 let callback2 = (value) => {
                     live.value = _map(value, callback);
                 }
-                this.watch(callback2, error);
+                this.watch(callback2);
                 return live;
             }
-            this.reduce = (callback, start, error) => {
+            this.reduce = (callback, start) => {
                 const live = new LiveValue();
                 let callback2 = (value) => {
                     live.value = _reduce(value, callback, start);
                 }
-                this.watch(callback2, error);
+                this.watch(callback2);
                 return live;
-            }
-            this.error = (err) => {
-                this.setValue(null);
-                _watchers.forEach((watcher) => { 
-                    if (watcher.error) watcher.error(err); 
-                });
-                return this;
             }
         }
 
@@ -690,7 +687,12 @@
         Parser: Parser(),
         evaluate: liveEvaluate,
         run (expr, env) {
-            return liveEvaluate(this.Parser.parse(TokenStream(InputStream(expr))), env);
+            try {
+                return liveEvaluate(this.Parser.parse(TokenStream(InputStream(expr))), env);
+            } catch(err) {
+                const live = new LiveValue(() => { throw err; });
+                return live;
+            }
         }
     }
 
