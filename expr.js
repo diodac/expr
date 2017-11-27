@@ -17,9 +17,10 @@
     const EXPR_CALL = 'call';
     const EXPR_LIST = 'list';
     const EXPR_COND = 'cond';
-    const EXPR_NUM = TOKEN_NUM;
+    const EXPR_NUM = TOKEN_NUM; //FIXME
     const EXPR_STR = TOKEN_STR;
     const EXPR_VAR = TOKEN_VAR;
+    const EXPR_NEGATE = 'neg';
     
     const KW_TRUE = 'true';
     const KW_FALSE = 'false';
@@ -309,6 +310,14 @@
             }
         }
 
+        function parseNegation(input) {
+            input.next();
+            return {
+                type: EXPR_NEGATE,
+                negate: parseAtom(input)
+            }
+        }
+
         function parseAtom(input) {
             return maybeCall(() => {
                 if (isPunc('(', input)) {
@@ -322,6 +331,9 @@
                 }
                 if (isPunc('[', input)) {
                     return parseList(input);
+                }
+                if (isOp('!', input)) {
+                    return parseNegation(input);
                 }
                 if (isKw(KW_IF, input)) {
                     return parseIf(input);
@@ -450,10 +462,13 @@
         const live = new LiveValue();
         const reevaluate = (function(expr, env) {
             return () => { 
-                try {
-                    live.value = evaluate(expr, env);
-                } catch (e) {
-                    live.error(e);
+                live.value = () => {
+                    try {
+                        return evaluate(expr, env);
+                    } catch (e) {
+                        live.error(e);
+                    }
+                    return null;
                 }
             }
         })(expr, env);
@@ -464,6 +479,8 @@
                 case EXPR_STR:
                 case EXPR_BOOL:
                     return expr.value;
+                case EXPR_NEGATE:
+                    return !evaluate(expr.negate, env);
                 case EXPR_VAR:
                     let value = env.get(expr.value);
                     if (observed.indexOf(expr.value) === -1) {
@@ -509,12 +526,23 @@
             this.parent = parent;
 
             const _watchers = Object.create(null);
+            const _live = Object.create(null);
 
             this.watch = (name, callback) => {
                 if (!(name in _watchers)) {
                     _watchers[name] = [];
                 }
                 _watchers[name].push(callback);
+            }
+            
+            this.live = (name) => {
+                if (!(name in _live)) {
+                    _live[name] = new Expr.LiveValue(this.get(name));
+                }
+                this.watch(name, (val) => {
+                    _live[name].value = val;
+                });
+                return _live[name];
             }
 
             this.notify = (name) => {
@@ -571,14 +599,6 @@
             }
         }
 
-        live (name) {
-            let live = new Expr.LiveValue(this.get(name));
-            this.watch(name, (val) => {
-                live.value = val;
-            });
-            return live;
-        }
-
         alias (target, alias) {
             this.aliases[alias] = target;
         }
@@ -593,22 +613,28 @@
             let _value = value;
             const _watchers = [];
             const _map = (value, callback) => {
-                return Array.isArray(value) ? value.map(callback) : [value].map(callback);
+                return callback(value);
             }
             const _reduce = (value, callback, start) => {
-                return Array.isArray(value) ? value.reduce(callback, start) : [value].reduce(callback, start);
+                return callback(start, value);
+            }
+            const _invokeCallback = (callback) => {
+                if (typeof _value === 'function') {
+                    _value = _value();
+                }
+                return callback(_value);
             }
 
             this.setValue = (value) => { 
                 _value = value; 
                 _watchers.forEach((watcher) => {
-                    watcher.callback(_value);
+                    _invokeCallback(watcher.callback);
                 }); 
             }
             this.getValue = () => _value;
             this.watch = (callback, error) => { 
                 _watchers.push({ callback, error }); 
-                callback(_value);
+                _invokeCallback(callback);
                 return this;
             }
             this.map = (callback, error) => {
@@ -616,8 +642,7 @@
                 let callback2 = (value) => {
                     live.value = _map(value, callback);
                 }
-                _watchers.push({ callback: callback2, error, asMap: true });
-                callback2(_value);
+                this.watch(callback2, error);
                 return live;
             }
             this.reduce = (callback, start, error) => {
@@ -625,8 +650,7 @@
                 let callback2 = (value) => {
                     live.value = _reduce(value, callback, start);
                 }
-                _watchers.push({ callback: callback2, error, asReduce: true });
-                callback2(_value);
+                this.watch(callback2, error);
                 return live;
             }
             this.error = (err) => {

@@ -28,9 +28,9 @@
                 <tr>
                     <th>Field 3:</th>
                     <td>
-                        <input type="text" data-validate="_self()">
+                        <input type="text" data-validate="valid(!_self || test('^test', _self), 'Wartość nie zgadza się ze wzorem')" data-validate-out="#validate-out">
                     </td>
-                    <td></td>
+                    <td id="validate-out"></td>
                 </tr>
                 <tr>
                     <th>Date 1:</th>
@@ -38,6 +38,13 @@
                         <input type="text" data-var="date1" data-value="str_substr(now(), 0, 10)">
                     </td>
                     <td></td>
+                </tr>
+                <tr>
+                    <th>Expr 1:</th>
+                    <td>
+                        <input type="text" data-expr data-expr-out="#expr-1-out">
+                    </td>
+                    <td id="expr-1-out"></td>
                 </tr>
             </tbody>
         </table>
@@ -89,6 +96,9 @@
             }
             return 0;
         }
+        function not(value) {
+            return !value;
+        }
         function now() {
             return (new Date).toISOString()
                 .replace(/[a-z]/gi, ' ')
@@ -121,6 +131,7 @@
         env.def('val', defaultVal, { writable: false });
         env.def('valid', valid, { writable: false });
         env.def('num', num, { writable: false });
+        env.def('not', not, { writable: false });
         env.def('now', now, { writable: false });
         env.def('str_substr', str_substr, { writable: false });
         env.alias('val', 'wart');
@@ -160,7 +171,6 @@
             el.addEventListener('keyup', (event) => { env.set(varName, event.target.value); });
         });
         document.querySelectorAll('[data-value]').forEach((el) => {
-            const localEnv = env.extend();
             el.readOnly = true;
             Expr.run(el.dataset.value, env).watch((value) => { 
                 el.value = value;
@@ -177,18 +187,34 @@
         });
         document.querySelectorAll('[data-validate]').forEach((el) => {
             const localEnv = env.extend();
-            localEnv.def('_self', () => el.value);
-            el.addEventListener('change', () => {
-                Expr.run(el.dataset.validate, localEnv).watch((msg) => {
-                    el.dataset.error = JSON.stringify(msg);
-                    el.dispatchEvent(new CustomEvent('validated', { bubbles: true }));
-                });
-            });
+            const out = document.querySelectorAll(el.dataset.validateOut);
+            localEnv.def('_self', el.value);
+            Expr.run(el.dataset.validate, localEnv).watch((msg) => {
+                el.dataset.error = JSON.stringify(msg);
+                out.forEach((out) => { out.innerHTML = el.dataset.error; });
+                el.dispatchEvent(new CustomEvent('validated', { bubbles: true }));
+            }, (err) => { console.log(err.message); });
+            el.addEventListener('change', () => { localEnv.set('_self', el.value) });
+            el.addEventListener('keyup', () => { localEnv.set('_self', el.value) });
         });
         document.addEventListener('validated', (event) => { 
             if (JSON.parse(event.target.dataset.error)) {
-                alert(event.target.dataset.error); 
+                console.log(event.target.dataset.error); 
             }
+        });
+        document.querySelectorAll('[data-expr]').forEach((el) => {
+            const out = document.querySelectorAll(el.dataset.exprOut);
+            
+            let handler = (event) => { 
+                Expr.run(el.value, env)
+                    .watch((value) => {
+                        out.forEach((o) => { o.innerHTML = value; });
+                    }, (err) => {
+                        out.forEach((o) => { console.log(err.message); });
+                    });
+            }
+            el.addEventListener('change', handler);
+            el.addEventListener('keyup', handler);
         });
 
         env.watch('field1', console.log);
